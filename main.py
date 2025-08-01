@@ -1,73 +1,106 @@
-from flask import Flask
-import threading
+import telebot
+from telebot import types
+from instagram_private_api import Client, ClientCookieAuthError
 import time
-from instagrapi import Client
+import os
 
-app = Flask(__name__)
+bot = telebot.TeleBot("8003051865:AAFU_jM4OAvfeYHw0eDMQ9FLAAKcvJS9200")
 
-def insta_bot():
-    cl = Client()
+user_data = {}
 
-    username = "hyp319_2027899"
-    password = "pandit@ak90"
-    target_username = "pandit_292"
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "Welcome! Send /send to start sending Instagram DMs.")
 
-    messages = [
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "khushi_gawar_h3re"
-        "#H9R_H9R_M9H9D3V_#V9MPIR3_RUL3X_H3R3: O:) _____________ <3 Kitna Wakif Thi Woh meri Kamjori Se,          Wo Ro Deti Thi Aur Main Har Jata Tha.     =) )   ___________ <3    ~{{ 3:) (^^^) O:) #khushi_gawar_h3re 3:)  (y)   <3 }}~ <3",
-        "yy"
-    ]
+@bot.message_handler(commands=['send'])
+def send(message):
+    user_data[message.chat.id] = {}
+    msg = bot.send_message(message.chat.id, "Send your Instagram cookie string:")
+    bot.register_next_step_handler(msg, get_cookie)
 
-    delay_seconds = 6  # Delay between messages
+def get_cookie(message):
+    cookie = message.text.strip()
+    user_data[message.chat.id]['cookie'] = cookie
+    msg = bot.send_message(message.chat.id, "Enter the Instagram thread ID:")
+    bot.register_next_step_handler(msg, get_thread_id)
 
-    try:
-        cl.login(username, password)
-        print(f"✅ Logged in as @{username}")
-    except Exception as e:
-        print(f"❌ Login failed: {e}")
+def get_thread_id(message):
+    thread_id = message.text.strip()
+    user_data[message.chat.id]['thread_id'] = thread_id
+    msg = bot.send_message(message.chat.id, "Enter the name to prefix in each message:")
+    bot.register_next_step_handler(msg, get_name)
+
+def get_name(message):
+    name = message.text.strip()
+    user_data[message.chat.id]['name'] = name
+    msg = bot.send_message(message.chat.id, "Now upload the message text file (.txt):")
+    bot.register_next_step_handler(msg, get_file)
+
+def get_file(message):
+    if not message.document:
+        bot.send_message(message.chat.id, "Please send a .txt file.")
         return
 
+    file_info = bot.get_file(message.document.file_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+
+    filepath = f"{message.chat.id}_messages.txt"
+    with open(filepath, "wb") as f:
+        f.write(downloaded_file)
+
+    user_data[message.chat.id]['msgfile'] = filepath
+    msg = bot.send_message(message.chat.id, "Enter delay (in seconds) between messages:")
+    bot.register_next_step_handler(msg, get_delay)
+
+def get_delay(message):
     try:
-        target_user_id = cl.user_id_from_username(target_username)
-        print(f"🎯 Target user ID found for @{target_username}")
-    except Exception as e:
-        print(f"❌ Could not get target user ID: {e}")
+        delay = int(message.text.strip())
+    except:
+        bot.send_message(message.chat.id, "Enter a valid number for delay.")
         return
 
-    last_sent_time = 0
-    message_index = 0
+    user_data[message.chat.id]['delay'] = delay
+    bot.send_message(message.chat.id, "Starting DM sending...")
+    send_messages(message.chat.id)
 
-    while True:
-        now = time.time()
-        if now - last_sent_time >= delay_seconds:
-            try:
-                msg = messages[message_index]
-                cl.direct_send(msg, [target_user_id])
-                print(f"✅ Sent message {message_index+1} to @{target_username}")
-                message_index = (message_index + 1) % len(messages)
-                last_sent_time = now
-            except Exception as e:
-                print(f"❌ Error sending message: {e}")
-        time.sleep(5)
+def send_messages(chat_id):
+    data = user_data.get(chat_id)
+    if not data:
+        return
 
-@app.route('/')
-def index():
-    return "✅ Instagram Bot with 2 Messages Running on Zeabur!"
+    cookie_string = data['cookie']
+    thread_id = data['thread_id']
+    name = data['name']
+    filepath = data['msgfile']
+    delay = data['delay']
 
-if __name__ == '__main__':
-    threading.Thread(target=insta_bot).start()
-    app.run(host="0.0.0.0", port=8080)
+    try:
+        cookie_dict = {}
+        for part in cookie_string.split(';'):
+            if '=' in part:
+                key, value = part.strip().split('=', 1)
+                cookie_dict[key.strip()] = value.strip()
+
+        api = Client(cookie=None, auto_patch=True, authenticate=False)
+        api._initiate_session()
+        api._session.cookies.update(cookie_dict)
+        api.authenticated_user_id = api.current_user()['user']['pk']
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            messages = [line.strip() for line in f if line.strip()]
+
+        for msg in messages:
+            full_msg = f"{name} {msg}"
+            api.direct_v2_send_text(recipient_users=[[thread_id]], text=full_msg)
+            bot.send_message(chat_id, f"✅ Sent: {full_msg}")
+            time.sleep(delay)
+
+        bot.send_message(chat_id, "✅ Done sending all messages.")
+        os.remove(filepath)
+
+    except ClientCookieAuthError:
+        bot.send_message(chat_id, "❌ Invalid cookie or session expired.")
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ Error: {e}")
+
+bot.polling()
