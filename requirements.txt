@@ -1,2 +1,2 @@
-flask
-instagrapi
+pyTelegramBotAPI
+instagram_private_api
